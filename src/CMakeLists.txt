@@ -28,11 +28,25 @@ find_package(PkgConfig)
 find_package(BZip2)
 set(USE_SYSTEM_BZip2 $<AND:$<BOOL:${PREFER_SYSTEM_BZip2}>,$<BOOL:${BZIP2_FOUND}>,$<NOT:$<BOOL:${WIN32}>>>)
 
+if(EMSCRIPTEN)
+  # Dependencies come from Emscripten ports (-sUSE_* flags in web/build.sh),
+  # a cross-compiled libxml2 (web/build-deps.sh) and an offline curl stub.
+  set(XM_WEB_STUBS_DIR "${PROJECT_SOURCE_DIR}/web/stubs" CACHE PATH "Offline libcurl stub")
+  set(XM_WEB_LIBXML2_PREFIX "" CACHE PATH "libxml2 built for Emscripten")
+  if(NOT EXISTS "${XM_WEB_LIBXML2_PREFIX}/lib/libxml2.a")
+    message(FATAL_ERROR "Set XM_WEB_LIBXML2_PREFIX to a libxml2 built by web/build-deps.sh")
+  endif()
+  set(CURL_INCLUDE_DIR "${XM_WEB_STUBS_DIR}")
+  set(LIBXML2_INCLUDE_DIR "${XM_WEB_LIBXML2_PREFIX}/include/libxml2")
+  set(LIBXML2_LIBRARIES "${XM_WEB_LIBXML2_PREFIX}/lib/libxml2.a")
+else()
 find_package(CURL REQUIRED)
+endif()
 if(USE_GETTEXT)
   find_package(Gettext REQUIRED)
   find_package(Intl REQUIRED)
 endif()
+if(NOT EMSCRIPTEN)
 find_package(JPEG REQUIRED)
 
 find_package(LibLZMA)
@@ -41,8 +55,11 @@ find_package(LibXml2 REQUIRED)
 if(USE_OPENGL)
   find_package(OpenGL REQUIRED)
 endif()
+endif()
 
-if(APPLE)
+if(EMSCRIPTEN)
+  # provided by ports
+elseif(APPLE)
   if(NOT PKG_CONFIG_FOUND)
     message(FATAL_ERROR "pkg-config is required on macOS to find the correct libpng headers")
   endif()
@@ -63,7 +80,9 @@ elseif (LUA_VERSION_STRING VERSION_GREATER_EQUAL "5.3")
 endif()
 
 # Can't disable yet
-if(ON OR USE_SDLGFX)
+if(EMSCRIPTEN)
+  # provided by ports
+elseif(ON OR USE_SDLGFX)
   # This is a workaround required on some systems that ship a broken sdl2-config.cmake
   find_library(SDL2_LIBRARIES NAMES SDL2 SDL2main)
   if(NOT SDL2_LIBRARIES OR DEFINED ENV{NIX_STORE})
@@ -80,12 +99,16 @@ if(ON OR USE_SDLGFX)
   find_package(SDL2_ttf REQUIRED)
 endif()
 
+if(NOT EMSCRIPTEN)
 find_package(SQLITE3 REQUIRED)
+endif()
 
 find_package(XDG)
 set(USE_SYSTEM_XDG $<AND:$<BOOL:${PREFER_SYSTEM_XDG}>,$<BOOL:${XDG_FOUND}>>)
 
+if(NOT EMSCRIPTEN)
 find_package(ZLIB REQUIRED)
+endif()
 
 if(APPLE)
   find_library(COREFOUNDATION_LIBRARY CoreFoundation)
@@ -106,7 +129,9 @@ add_subdirectory("${PROJECT_SOURCE_DIR}/vendor/lua" lua)
 add_subdirectory("${PROJECT_SOURCE_DIR}/vendor/md5sum" md5sum)
 add_subdirectory("${PROJECT_SOURCE_DIR}/vendor/ode" ode)
 add_subdirectory("${PROJECT_SOURCE_DIR}/vendor/xdgbasedir" xdgbasedir)
-add_subdirectory("${PROJECT_SOURCE_DIR}/vendor/glad" glad)
+if(NOT EMSCRIPTEN)
+  add_subdirectory("${PROJECT_SOURCE_DIR}/vendor/glad" glad)
+endif()
 
 configure_file(common/XMBuildConfig.h.in common/XMBuildConfig.h)
 
@@ -516,7 +541,7 @@ target_link_libraries(xmoto PUBLIC
   $<$<NOT:${USE_SYSTEM_Lua}>:lua>
   md5sum
   ode
-  glad
+  $<$<NOT:$<BOOL:${EMSCRIPTEN}>>:glad>
   ${CMAKE_DL_LIBS}
   ${OPENGL_LIBRARIES}
   ${PNG_LIBRARIES}
@@ -531,9 +556,14 @@ target_link_libraries(xmoto PUBLIC
   $<$<PLATFORM_ID:Darwin>:${COREFOUNDATION_LIBRARY}>
 )
 
-set_property(TARGET xmoto PROPERTY CXX_STANDARD 11)
-# strip release builds
-set_target_properties(xmoto PROPERTIES LINK_FLAGS_RELEASE -s)
+if(EMSCRIPTEN)
+  # clang's libc++ only has the non-const std::string::data() from C++17 on
+  set_property(TARGET xmoto PROPERTY CXX_STANDARD 17)
+else()
+  set_property(TARGET xmoto PROPERTY CXX_STANDARD 11)
+  # strip release builds
+  set_target_properties(xmoto PROPERTIES LINK_FLAGS_RELEASE -s)
+endif()
 
 check_symbol_exists(putenv stdlib.h HAVE_PUTENV)
 check_symbol_exists(setenv stdlib.h HAVE_SETENV)
@@ -616,7 +646,13 @@ endif()
 #target_compile_options(xmoto PRIVATE -Wall)
 #target_compile_options(xmoto PRIVATE -Werror)
 # chipmunk on Windows
-target_compile_options(xmoto PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fpermissive>)
+if(EMSCRIPTEN)
+  # gcc's -fpermissive has no clang equivalent; flags come from web/build.sh
+  set_target_properties(xmoto PROPERTIES SUFFIX ".html")
+  target_include_directories(xmoto SYSTEM PRIVATE "${XM_WEB_STUBS_DIR}")
+else()
+  target_compile_options(xmoto PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fpermissive>)
+endif()
 
 function(set_win32_compat_path COMPAT REAL)
   # stupid win32 paths..

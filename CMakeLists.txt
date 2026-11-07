@@ -28,7 +28,11 @@ add_subdirectory(src)
 include(cpack/cpack.cmake)
 include(CPack)
 
-add_subdirectory(bin)
-add_subdirectory(doc)
-add_subdirectory(extra)
+if(NOT EMSCRIPTEN)
+  # bin/ runs `xmoto --pack`, which cannot run when cross-compiling.
+  # The wasm build packs data with web/pack.py instead.
+  add_subdirectory(bin)
+  add_subdirectory(doc)
+  add_subdirectory(extra)
+endif()
 #add_subdirectory(po)

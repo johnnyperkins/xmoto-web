@@ -118,7 +118,8 @@ std::string getPWDDir(bool i_asUtf8 = false) {
 #endif
 }
 
-#if !defined(WIN32) && !defined(__MORPHOS__) && !defined(__amigaos4__)
+#if !defined(WIN32) && !defined(__MORPHOS__) && !defined(__amigaos4__) && \
+  !defined(__EMSCRIPTEN__) // Emscripten's libc already has strlwr
 void strlwr(char *pc) {
   for (unsigned int i = 0; i < strlen(pc); i++)
     pc[i] = tolower(pc[i]);
