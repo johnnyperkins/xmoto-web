@@ -61,7 +61,8 @@ for when a bad one is stuck. The switch then removes itself from the address.
   takes its normal offline paths.
 - In the C++ source, Emscripten changes are behind `__EMSCRIPTEN__`. The main
   loop returns to the browser every frame, threads run synchronously, and
-  drawing goes through `-sLEGACY_GL_EMULATION`. Physics code is unchanged.
+  drawing goes through `-sLEGACY_GL_EMULATION`. Physics code is unchanged;
+  `physics-check/` measures how close wasm rides to native.
 - Input: the browser delivers a frame's key presses at once, so the loop
   replays them at their own times. Each one lands on the 10 ms physics step
   during which it happened, and a tap shorter than a step still counts for
