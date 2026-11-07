@@ -1270,6 +1270,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE void xm_web_save_config() {
     printf("config save failed : %s\n", e.getMsg().c_str());
   }
 }
+
+/* Saves settings and asks the page to copy them to IndexedDB right away. */
+extern "C" void xm_web_settings_changed() {
+  xm_web_save_config();
+  EM_ASM({
+    if (Module.xmSyncSaves)
+      Module.xmSyncSaves();
+  });
+}
 #endif
 
 void GameApp::run_unload() {

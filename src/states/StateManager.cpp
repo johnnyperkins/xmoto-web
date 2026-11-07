@@ -209,13 +209,31 @@ GameState *StateManager::popState() {
   return pState;
 }
 
+#ifdef __EMSCRIPTEN__
+extern "C" void xm_web_settings_changed();
+#endif
+
 void StateManager::flush() {
+#ifdef __EMSCRIPTEN__
+  bool v_closedState = false;
+#endif
   while (m_statesStack.size() > 0 && m_statesStack.back()->requestForEnd()) {
     LogDebug("Flush %s", m_statesStack.back()->getName().c_str());
     delete popState();
+#ifdef __EMSCRIPTEN__
+    v_closedState = true;
+#endif
   }
 
   deleteToDeleteState();
+
+#ifdef __EMSCRIPTEN__
+  /* Settings stay in memory until saved, and a closing page can't finish
+     saving. Save each time a menu closes, which is when they change. */
+  if (v_closedState && m_statesStack.size() > 0) {
+    xm_web_settings_changed();
+  }
+#endif
 
   if (m_statesStack.size() == 0) {
     GameApp::instance()->requestEnd();
