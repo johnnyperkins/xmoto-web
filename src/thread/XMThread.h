@@ -77,6 +77,7 @@ protected:
   void setSafeKill(bool i_value);
 
   SDL_Thread *m_pThread;
+  int m_syncReturnValue = 0; // wasm build: threads run synchronously
   bool m_isRunning;
   bool m_isSleeping;
   bool m_askThreadToEnd;

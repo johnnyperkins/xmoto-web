@@ -67,7 +67,12 @@ void XMThread::startThread() {
   m_currentOperation = "";
   m_askThreadToEnd = false;
   m_isRunning = true; // set before running the thread
+#ifdef __EMSCRIPTEN__
+  // Single-threaded wasm build: run to completion on the calling thread.
+  m_syncReturnValue = run(this);
+#else
   m_pThread = SDL_CreateThread(&XMThread::run, NULL, this);
+#endif
 }
 
 int XMThread::runInMain() {
@@ -80,6 +85,10 @@ int XMThread::runInMain() {
 }
 
 int XMThread::waitForThreadEnd() {
+#ifdef __EMSCRIPTEN__
+  m_isRunning = false;
+  return m_syncReturnValue;
+#endif
   int returnValue;
   SDL_WaitThread(m_pThread, &returnValue);
   m_pThread = NULL;
