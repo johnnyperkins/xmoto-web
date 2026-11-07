@@ -666,6 +666,9 @@ void StateManager::render() {
       }
     }
 
+#ifdef __EMSCRIPTEN__
+    GameApp::instance()->webTakePendingScreenshot();
+#endif
     drawLib->flushGraphics();
     m_renderFpsNbFrame++;
 

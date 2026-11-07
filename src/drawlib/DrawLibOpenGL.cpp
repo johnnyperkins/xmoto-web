@@ -536,6 +536,24 @@ Img *DrawLibOpenGL::grabScreen(int i_reduce) {
 
   pImg->createEmpty(v_imgW, v_imgH);
   Color *pPixels = pImg->getPixels();
+
+#ifdef __EMSCRIPTEN__
+  /* WebGL has no front buffer to select and only promises RGBA reads. The
+     caller grabs the frame just drawn, before the browser shows it. */
+  unsigned char *pcAll = new unsigned char[m_nDispWidth * m_nDispHeight * 4];
+  glReadPixels(
+    0, 0, m_nDispWidth, m_nDispHeight, GL_RGBA, GL_UNSIGNED_BYTE, pcAll);
+  for (unsigned int i = 0; i < v_imgH; i++) {
+    unsigned char *pcRow = pcAll + (i * i_reduce) * m_nDispWidth * 4;
+    for (unsigned int j = 0; j < v_imgW; j++) {
+      unsigned char *pc = pcRow + j * i_reduce * 4;
+      pPixels[(v_imgH - i - 1) * v_imgW + j] =
+        MAKE_COLOR(pc[0], pc[1], pc[2], 255);
+    }
+  }
+  delete[] pcAll;
+  return pImg;
+#else
   unsigned char *pcTemp = new unsigned char[m_nDispWidth * 3];
 
   /* Select frontbuffer */
@@ -555,6 +573,7 @@ Img *DrawLibOpenGL::grabScreen(int i_reduce) {
 
   delete[] pcTemp;
   return pImg;
+#endif
 }
 
 void DrawLibOpenGL::startDraw(DrawMode mode) {

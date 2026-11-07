@@ -23,6 +23,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include "Game.h"
 #include "Credits.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "GameText.h"
 #include "PhysSettings.h"
 #include "Sound.h"
@@ -217,6 +220,43 @@ GameApp::GameApp() {
 /*===========================================================================
 Screenshooting
 ===========================================================================*/
+#ifdef __EMSCRIPTEN__
+// The browser clears the canvas once it is shown, so the screen can't be read
+// when the key arrives. Grab the next frame right after it is drawn instead
+// (StateManager::render) and hand it to the page.
+static bool s_webScreenshotPending = false;
+
+void GameApp::gameScreenshot() {
+  s_webScreenshotPending = true;
+}
+
+void GameApp::webTakePendingScreenshot() {
+  if (s_webScreenshotPending == false) {
+    return;
+  }
+  s_webScreenshotPending = false;
+
+  Img *pShot = getDrawLib()->grabScreen();
+  std::string v_file = XMFS::getUserDir(FDT_DATA) + "/screenshot-download.png";
+  try {
+    pShot->saveFile(v_file.c_str());
+  } catch (Exception &e) {
+    LogError(
+      std::string("Unable to save the screenshot: " + e.getMsg()).c_str());
+    delete pShot;
+    return;
+  }
+  delete pShot;
+
+  // the page offers the file as a download, then deletes it
+  EM_ASM(
+    {
+      if (Module.xmSaveScreenshot)
+        Module.xmSaveScreenshot(UTF8ToString($0));
+    },
+    v_file.c_str());
+}
+#else
 void GameApp::gameScreenshot() {
   Img *pShot = getDrawLib()->grabScreen();
 
@@ -259,6 +299,7 @@ void GameApp::gameScreenshot() {
 
   delete pShot;
 }
+#endif
 
 void GameApp::enableFps(bool bValue) {
   XMSession::instance()->setFps(XMSession::instance()->fps() == false);

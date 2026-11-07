@@ -172,6 +172,9 @@ public:
     XMotoLoadReplaysInterface *pLoadReplaysInterface = NULL);
 
   void gameScreenshot();
+#ifdef __EMSCRIPTEN__
+  void webTakePendingScreenshot();
+#endif
   void enableWWW(bool bValue);
   void enableFps(bool bValue);
   void switchUglyMode(bool bUgly);
