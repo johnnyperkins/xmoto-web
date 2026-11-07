@@ -97,6 +97,10 @@ public:
   int numberOfStates();
 
   int getMaxFps() { return m_maxFps; }
+#ifdef __EMSCRIPTEN__
+  // more loop iterations follow in this browser frame: let the last one draw
+  void setWebDeferRender(bool i_value) { m_webDeferRender = i_value; }
+#endif
 
   // video recorder
   VideoRecorder *getVideoRecorder();
@@ -165,6 +169,9 @@ private:
   int m_curRenderFps;
   // how many max fps beat for one render
   float m_renderPeriod;
+#ifdef __EMSCRIPTEN__
+  bool m_webDeferRender = false;
+#endif
 
   // cursor
   Texture *m_cursor;

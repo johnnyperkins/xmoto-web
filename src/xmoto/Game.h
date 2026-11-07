@@ -71,6 +71,9 @@ public:
   void run_loop();
   /* one pass of the main loop: events, update, render, frame pacing */
   void run_iteration();
+#ifdef __EMSCRIPTEN__
+  static void run_browser_frame(void *i_app);
+#endif
   void saveUserConfig();
   void run_unload();
 

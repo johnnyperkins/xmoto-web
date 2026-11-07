@@ -947,6 +947,13 @@ bool StateManager::doRender() {
     return true;
   }
 
+#ifdef __EMSCRIPTEN__
+  /* The browser paces frames to the display: draw once on every frame that
+   * ran the game, after its last iteration. The render fps cap (50 by default)
+   * would repeat every sixth picture at 60 Hz. */
+  return !m_webDeferRender;
+#endif
+
   if (m_renderCounter >= m_renderPeriod) {
     m_renderCounter -= m_renderPeriod;
     return true;

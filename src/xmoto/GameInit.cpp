@@ -51,6 +51,10 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include "helpers/Text.h"
 #include <curl/curl.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "states/StateEditProfile.h"
 #include "states/StateMainMenu.h"
 #include "states/StateManager.h"
@@ -132,6 +136,14 @@ int main(int nNumArgs, char **ppcArgs) {
              "might has occurred.\n",
              e.getMsg().c_str());
     MessageBox(NULL, cBuf, "X-Moto Error", MB_OK | MB_ICONERROR);
+#endif
+#ifdef __EMSCRIPTEN__
+    EM_ASM(
+      {
+        if (Module.xmOnFatal)
+          Module.xmOnFatal(UTF8ToString($0));
+      },
+      e.getMsg().c_str());
 #endif
   }
   return 0;
@@ -888,10 +900,69 @@ void GameApp::manageEvent(SDL_Event *Event) {
   }
 }
 
+#ifdef __EMSCRIPTEN__
+/* The hooks below must not touch singletons before the game has initialised
+ * them: creating StateManager early breaks the first menu. */
+static bool s_webGameStarted = false;
+
+/* The browser calls this once per display frame and the game must return to
+ * it. Update and render counters count loop iterations and expect getMaxFps()
+ * of them a second, so run however many this frame owes. Physics is
+ * unaffected: StateScene::update steps it in fixed 0.01s increments against
+ * wall-clock time, as it does natively. */
+void GameApp::run_browser_frame(void *i_app) {
+  static double s_lastTime = emscripten_get_now();
+  static double s_owed = 1.0;
+  const double v_maxOwed = 8.0; // don't spiral after a stall or a hidden tab
+
+  GameApp *v_app = static_cast<GameApp *>(i_app);
+  double v_now = emscripten_get_now();
+
+  s_owed +=
+    (v_now - s_lastTime) / 1000.0 * StateManager::instance()->getMaxFps();
+  s_lastTime = v_now;
+  if (s_owed > v_maxOwed) {
+    s_owed = v_maxOwed;
+  }
+
+  try {
+    while (s_owed >= 1.0 && v_app->m_bQuit == false) {
+      StateManager::instance()->setWebDeferRender(s_owed >= 2.0);
+      v_app->run_iteration();
+      s_owed -= 1.0;
+    }
+    if (v_app->m_bQuit) {
+      /* No run_unload: the tab reclaims everything, and its teardown order
+       * (GL context before textures) throws under WebGL. */
+      emscripten_cancel_main_loop();
+      v_app->saveUserConfig();
+      EM_ASM({
+        if (Module.xmOnQuit)
+          Module.xmOnQuit();
+      });
+    }
+  } catch (Exception &e) {
+    emscripten_cancel_main_loop();
+    printf("fatal exception : %s\n", e.getMsg().c_str());
+    EM_ASM(
+      {
+        if (Module.xmOnFatal)
+          Module.xmOnFatal(UTF8ToString($0));
+      },
+      e.getMsg().c_str());
+  }
+}
+#endif
+
 void GameApp::run_loop() {
+#ifdef __EMSCRIPTEN__
+  s_webGameStarted = true;
+  emscripten_set_main_loop_arg(&GameApp::run_browser_frame, this, 0, 1);
+#else
   while (m_bQuit == false) {
     run_iteration();
   }
+#endif
 }
 
 void GameApp::run_iteration() {
@@ -934,6 +1005,12 @@ void GameApp::run_iteration() {
   /* Handle SDL events */
   SDL_PumpEvents();
 
+#ifdef __EMSCRIPTEN__
+  // never block the browser's thread
+  while (SDL_PollEvent(&Event)) {
+    manageEvent(&Event);
+  }
+#else
   // wait on event if xmoto won't be update/rendered
   if (StateManager::instance()->needUpdateOrRender()) {
     while (SDL_PollEvent(&Event)) {
@@ -947,6 +1024,7 @@ void GameApp::run_iteration() {
       manageEvent(&Event);
     }
   }
+#endif
 
   /* Update user app */
   // update sound
@@ -992,12 +1070,14 @@ void GameApp::run_iteration() {
       m_loopWithoutNetwork++;
     }
   } else {
+#ifndef __EMSCRIPTEN__ // run_browser_frame paces the loop
     /* pause system without having to wait for the net at the same time */
     if (XMSession::instance()->timedemo() == false) {
       GameApp::wait(m_lastFrameTimeStamp,
                     m_frameLate,
                     StateManager::instance()->getMaxFps());
     }
+#endif
   }
 }
 
@@ -1012,6 +1092,21 @@ void GameApp::saveUserConfig() {
     m_userConfig->saveFile();
   }
 }
+
+#ifdef __EMSCRIPTEN__
+/* Tabs can close at any moment and run_unload never runs, so the page calls
+ * this before it copies the filesystem to IndexedDB. */
+extern "C" EMSCRIPTEN_KEEPALIVE void xm_web_save_config() {
+  if (!s_webGameStarted) {
+    return;
+  }
+  try {
+    GameApp::instance()->saveUserConfig();
+  } catch (Exception &e) {
+    printf("config save failed : %s\n", e.getMsg().c_str());
+  }
+}
+#endif
 
 void GameApp::run_unload() {
   if (Logger::isInitialized()) {
