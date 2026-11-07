@@ -385,8 +385,18 @@ void GameApp::run_load(int nNumArgs, char **ppcArgs) {
                   XMSession::instance()->windowed());
     /* drawlib can change the final resolution if it fails, then, reinit session
      * one's */
+#ifdef __EMSCRIPTEN__
+    /* The page passes the window size as -res; don't save it over the setting
+     * (0 x 0 for fit window). */
+    int v_savedWidth = XMSession::instance("file")->resolutionWidth();
+    int v_savedHeight = XMSession::instance("file")->resolutionHeight();
+#endif
     XMSession::instance()->setResolutionWidth(drawLib->getDispWidth());
     XMSession::instance()->setResolutionHeight(drawLib->getDispHeight());
+#ifdef __EMSCRIPTEN__
+    XMSession::instance("file")->setResolutionWidth(v_savedWidth);
+    XMSession::instance("file")->setResolutionHeight(v_savedHeight);
+#endif
     XMSession::instance()->setWindowed(drawLib->getWindowed());
     LogInfo("Resolution: %ix%i",
             XMSession::instance()->resolutionWidth(),

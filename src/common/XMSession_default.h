@@ -52,8 +52,14 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #endif
 #define DEFAULT_PROFILE ""
 #define DEFAULT_VERBOSE false
+#ifdef __EMSCRIPTEN__
+// 0 x 0 means fit the browser window. The page then passes the size as -res.
+#define DEFAULT_RESOLUTION_WIDTH 0
+#define DEFAULT_RESOLUTION_HEIGHT 0
+#else
 #define DEFAULT_RESOLUTION_WIDTH 800
 #define DEFAULT_RESOLUTION_HEIGHT 600
+#endif
 #define DEFAULT_MAXRENDERFPS 50
 #define DEFAULT_WINDOWED true
 #define DEFAULT_USETHEMECURSOR true

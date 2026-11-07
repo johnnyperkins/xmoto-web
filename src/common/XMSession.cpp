@@ -1668,8 +1668,13 @@ void XMSession::createDefaultConfig(UserConfig *v_config) {
   /* so that in case of pb, people can change them easyly */
   /* moreover, dbinitialisation require win to be initialized (this can be
    * changed) */
+#ifdef __EMSCRIPTEN__
+  v_config->createVar("DisplayWidth", "0"); // fit the browser window
+  v_config->createVar("DisplayHeight", "0");
+#else
   v_config->createVar("DisplayWidth", "800");
   v_config->createVar("DisplayHeight", "600");
+#endif
   v_config->createVar("DisplayBPP", "32");
   v_config->createVar("DisplayWindowed", "true");
   v_config->createVar("DisplayMaxRenderFPS", "50");

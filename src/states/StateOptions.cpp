@@ -44,6 +44,10 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include <algorithm>
 #include <sstream>
 
+#ifdef __EMSCRIPTEN__
+#define WEB_FIT_WINDOW "Fit window"
+#endif
+
 /* static members */
 UIRoot *StateOptions::m_sGUI = NULL;
 
@@ -284,7 +288,7 @@ void StateOptions::checkEvents() {
     if (v_list->getSelected() >= 0 &&
         v_list->getSelected() < v_list->getEntries().size()) {
       UIListEntry *pEntry = v_list->getEntries()[v_list->getSelected()];
-      int nW, nH;
+      int nW = 0, nH = 0; /* 0 x 0: fit the browser window */
 
       sscanf(pEntry->Text[0].c_str(), "%d X %d", &nW, &nH);
       XMSession::instance()->setResolutionWidth(nW);
@@ -2805,14 +2809,34 @@ void StateOptions::updateResolutionsList() {
   int nMode = 0;
 
   v_list->clear();
+#ifdef __EMSCRIPTEN__
+  /* The page passes the window size as -res, so the running size never says
+     whether "fit window" is chosen. The saved setting does. */
+  v_list->addEntry(WEB_FIT_WINDOW);
+  snprintf(cBuf,
+           256,
+           "%d X %d",
+           XMSession::instance("file")->resolutionWidth(),
+           XMSession::instance("file")->resolutionHeight());
+  int nFirstMode = 1;
+#else
+  int nFirstMode = 0;
+#endif
   std::vector<std::string> *modes =
     System::getDisplayModes(XMSession::instance()->windowed());
   for (unsigned int i = 0; i < modes->size(); i++) {
     v_list->addEntry((*modes)[i].c_str());
     if (std::string((*modes)[i]) == std::string(cBuf)) {
-      nMode = i;
+      nMode = i + nFirstMode;
     }
   }
+#ifdef __EMSCRIPTEN__
+  /* a size set with ?res=WxH that isn't in the list */
+  if (nMode == 0 && XMSession::instance("file")->resolutionWidth() > 0) {
+    v_list->addEntry(cBuf);
+    nMode = modes->size() + nFirstMode;
+  }
+#endif
   delete modes;
   v_list->setRealSelected(nMode);
 }
