@@ -213,6 +213,37 @@ DrawLibOpenGL::DrawLibOpenGL()
 /*===========================================================================
   Transform an OpenGL vertex to pure 2D
   ===========================================================================*/
+#ifdef __EMSCRIPTEN__
+/* Emscripten's glBegin emulation appends each attribute call to the vertex
+ * stream and assumes every vertex carries the same attributes. Real GL has a
+ * "current" color and texcoord, so setting them once before several vertices
+ * is normal, but here it misaligns the stream. Track the current values and
+ * emit the full set with every vertex. */
+void DrawLibOpenGL::emitVertex(float x, float y) {
+  glColor4ub(GET_RED(m_curColor),
+             GET_GREEN(m_curColor),
+             GET_BLUE(m_curColor),
+             GET_ALPHA(m_curColor));
+  if (m_hasTexCoord) {
+    glTexCoord2f(m_curTexCoordX, m_curTexCoordY);
+  }
+  glVertex2f(x, y);
+}
+
+void DrawLibOpenGL::glVertexSP(float x, float y) {
+  emitVertex(x, m_renderSurf->getDispHeight() - y);
+}
+
+void DrawLibOpenGL::glVertex(float x, float y) {
+  emitVertex(x, y);
+}
+
+void DrawLibOpenGL::glTexCoord(float x, float y) {
+  m_curTexCoordX = x;
+  m_curTexCoordY = y;
+  m_hasTexCoord = true;
+}
+#else
 void DrawLibOpenGL::glVertexSP(float x, float y) {
   glVertex2f(x, m_renderSurf->getDispHeight() - y);
 }
@@ -224,6 +255,7 @@ void DrawLibOpenGL::glVertex(float x, float y) {
 void DrawLibOpenGL::glTexCoord(float x, float y) {
   glTexCoord2f(x, y);
 }
+#endif
 
 void DrawLibOpenGL::setClipRect(int x, int y, unsigned int w, unsigned int h) {
   // glScissor(x, m_nDispHeight - (y+h), w, h);
@@ -359,6 +391,7 @@ void DrawLibOpenGL::init(unsigned int nDispWidth,
   /* Create an OpenGL context */
   SDL_GLContext m_glContext = SDL_GL_CreateContext(m_window);
 
+#ifndef __EMSCRIPTEN__
   if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress)) {
     /* Try without SDL's loader */
     if (!gladLoadGL()) {
@@ -367,6 +400,7 @@ void DrawLibOpenGL::init(unsigned int nDispWidth,
       throw Exception(err);
     }
   }
+#endif
 
   /* OpenGL fully initialized */
 
@@ -407,11 +441,18 @@ void DrawLibOpenGL::init(unsigned int nDispWidth,
       m_bVBOSupported = isExtensionSupported("GL_ARB_vertex_buffer_object");
     }
 
+#ifdef __EMSCRIPTEN__
+    /* Report as present by the GL emulation, but they render a black screen.
+     * Only ghost effects need them. */
+    m_bFBOSupported = false;
+    m_bShadersSupported = false;
+#else
     m_bFBOSupported = isExtensionSupported("GL_EXT_framebuffer_object");
 
     m_bShadersSupported = isExtensionSupported("GL_ARB_fragment_shader") &&
                           isExtensionSupported("GL_ARB_vertex_shader") &&
                           isExtensionSupported("GL_ARB_shader_objects");
+#endif
   }
 
   if (m_bVBOSupported == true) {
@@ -517,6 +558,10 @@ Img *DrawLibOpenGL::grabScreen(int i_reduce) {
 }
 
 void DrawLibOpenGL::startDraw(DrawMode mode) {
+#ifdef __EMSCRIPTEN__
+  m_inBeginEnd = true;
+  m_hasTexCoord = false;
+#endif
   switch (mode) {
     case DRAW_MODE_POLYGON:
       glBegin(GL_POLYGON);
@@ -534,6 +579,10 @@ void DrawLibOpenGL::startDraw(DrawMode mode) {
 
 void DrawLibOpenGL::endDraw() {
   glEnd();
+#ifdef __EMSCRIPTEN__
+  m_inBeginEnd = false;
+  setColor(m_curColor); // colors in the stream don't update the current color
+#endif
   if (m_blendMode != BLEND_MODE_NONE) {
     glDisable(GL_BLEND);
   }
@@ -541,6 +590,10 @@ void DrawLibOpenGL::endDraw() {
 
 void DrawLibOpenGL::endDrawKeepProperties() {
   glEnd();
+#ifdef __EMSCRIPTEN__
+  m_inBeginEnd = false;
+  setColor(m_curColor); // colors in the stream don't update the current color
+#endif
 }
 
 void DrawLibOpenGL::removePropertiesAfterEnd() {
@@ -554,6 +607,12 @@ void DrawLibOpenGL::removePropertiesAfterEnd() {
 }
 
 void DrawLibOpenGL::setColor(Color color) {
+#ifdef __EMSCRIPTEN__
+  m_curColor = color;
+  if (m_inBeginEnd) {
+    return; // emitted with the next vertex
+  }
+#endif
   glColor4ub(
     GET_RED(color), GET_GREEN(color), GET_BLUE(color), GET_ALPHA(color));
 }

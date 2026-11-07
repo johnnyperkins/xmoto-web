@@ -126,7 +126,11 @@ Texture *TextureManager::createTexture(const std::string &Name,
   GLenum wrapParam;
   switch (wrapMode) {
     case WrapMode::Clamp:
+#ifdef __EMSCRIPTEN__
+      wrapParam = GL_CLAMP_TO_EDGE; // WebGL has no GL_CLAMP
+#else
       wrapParam = GL_CLAMP;
+#endif
       break;
 
     case WrapMode::ClampToEdge:
@@ -161,6 +165,22 @@ Texture *TextureManager::createTexture(const std::string &Name,
      * could end up using *more* space... oh well.
      */
     GLint retval;
+#ifdef __EMSCRIPTEN__
+    /* no GLU here: nearest-neighbour scaling */
+    for (int y = 0; y < max_texture_size; y++) {
+      const unsigned char *v_src =
+        pcData + (long long)y * nHeight / max_texture_size * nWidth * depth;
+      unsigned char *v_dst = newdata + (long long)y * max_texture_size * depth;
+      for (int x = 0; x < max_texture_size; x++) {
+        const unsigned char *v_px =
+          v_src + (long long)x * nWidth / max_texture_size * depth;
+        for (int c = 0; c < depth; c++) {
+          v_dst[x * depth + c] = v_px[c];
+        }
+      }
+    }
+    retval = 0;
+#else
     retval = gluScaleImage(bAlpha ? GL_RGBA : GL_RGB,
                            nWidth,
                            nHeight,
@@ -170,6 +190,7 @@ Texture *TextureManager::createTexture(const std::string &Name,
                            max_texture_size,
                            GL_UNSIGNED_BYTE,
                            newdata);
+#endif
 
     if (retval != 0) {
       throw TextureError(
@@ -182,6 +203,29 @@ Texture *TextureManager::createTexture(const std::string &Name,
     pTexture->nHeight = nHeight = max_texture_size;
   }
 
+#ifdef __EMSCRIPTEN__
+  /* WebGL wants a real format, not a component count, and mipmaps need a
+   * power-of-two size in WebGL 1. */
+  GLenum v_format = bAlpha ? GL_RGBA : GL_RGB;
+  bool v_isPot = (nWidth & (nWidth - 1)) == 0 && (nHeight & (nHeight - 1)) == 0;
+  glTexImage2D(GL_TEXTURE_2D,
+               0,
+               v_format,
+               nWidth,
+               nHeight,
+               0,
+               v_format,
+               GL_UNSIGNED_BYTE,
+               pcData);
+  if (eFilterMode == FM_MIPMAP) {
+    if (v_isPot) {
+      glGenerateMipmap(GL_TEXTURE_2D);
+    } else {
+      LogWarning("Texture '%s' is not power-of-two: no mipmaps", Name.c_str());
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    }
+  }
+#else
   if (eFilterMode == FM_MIPMAP) {
     gluBuild2DMipmaps(GL_TEXTURE_2D,
                       depth,
@@ -201,6 +245,7 @@ Texture *TextureManager::createTexture(const std::string &Name,
                  GL_UNSIGNED_BYTE,
                  pcData);
   }
+#endif
 
   glDisable(GL_TEXTURE_2D);
 

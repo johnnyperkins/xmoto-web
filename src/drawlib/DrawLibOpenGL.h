@@ -42,6 +42,14 @@ public:
   // texture coordinate
   virtual void glTexCoord(float x, float y);
   virtual void setColor(Color color);
+#ifdef __EMSCRIPTEN__
+  void emitVertex(float x, float y);
+  Color m_curColor = MAKE_COLOR(255, 255, 255, 255);
+  float m_curTexCoordX = 0.0f;
+  float m_curTexCoordY = 0.0f;
+  bool m_hasTexCoord = false;
+  bool m_inBeginEnd = false;
+#endif
 
   /**
    * set the texture for drawing
