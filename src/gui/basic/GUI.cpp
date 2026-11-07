@@ -416,7 +416,8 @@ void UIMsgBox::paint(void) {
     setFont(m_textInputFont);
   }
 
-  if (m_textEdit.text() != "") {
+  // the font can still be unset if a key arrives before the first paint
+  if (m_textEdit.text() != "" && getFont() != NULL) {
     FontManager *fm = getFont();
     FontGlyph *fg = fm->getGlyph(s);
     nCursorOffset = fg->realWidth();
