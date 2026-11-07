@@ -29,6 +29,11 @@ source to be offered.
 File names don't change between builds, so use revalidating cache headers
 (ETag or `no-cache`), or browsers may run an old `xmoto.wasm` after an update.
 
+`.github/workflows/web.yml` builds on every push. To publish the default branch
+to GitHub Pages, choose "GitHub Actions" as the Pages source and set the
+repository variable `XM_WEB_DEPLOY` to `true`. "Run workflow" in the Actions
+tab deploys again without a new commit.
+
 ## Resolution
 
 By default the game renders at the window's size when the page loads, and at
