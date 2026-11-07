@@ -50,6 +50,11 @@ public:
   void pushState(GameState *pNewState);
   /* replace only the last state with id = i_parentId */
   void replaceState(GameState *pNewState, const std::string &i_parentId);
+#ifdef __EMSCRIPTEN__
+  // automated browser tests: drop everything above the main menu, then play
+  void webPlayLevel(const std::string &i_levelId);
+  std::string webTopStateName() const;
+#endif
 
   // after some events, a state can requestForEnd
   // -> return NULL or the state which requested to be ended

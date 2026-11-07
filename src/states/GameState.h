@@ -66,6 +66,9 @@ public:
   bool updateStatesBehind() { return m_updateStatesBehind; }
 
   bool requestForEnd() { return m_requestForEnd; }
+#ifdef __EMSCRIPTEN__
+  void webRequestEnd() { m_requestForEnd = true; }
+#endif
 
   int getUpdateFps() { return m_updateFps; }
 

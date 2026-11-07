@@ -149,6 +149,22 @@
   var params = new URLSearchParams(location.search);
   var extraArgs = params.get('args');
 
+  /* ?test drives the game from a timer: browsers throttle requestAnimationFrame
+     in windows that aren't in front, which stalls automated tests. */
+  if (params.has('test')) {
+    window.frameCost = { total: 0, count: 0, max: 0 };
+    window.requestAnimationFrame = function (f) {
+      return setTimeout(function () {
+        var t0 = performance.now();
+        f(t0);
+        var ms = performance.now() - t0;
+        frameCost.total += ms;
+        frameCost.count++;
+        if (ms > frameCost.max) frameCost.max = ms;
+      }, 16);
+    };
+  }
+
   var Module = {
     canvas: canvas,
     /* chooseResolution() adds -res once saves are loaded. Keep this the same array:

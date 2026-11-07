@@ -240,6 +240,20 @@ void StateManager::flush() {
   }
 }
 
+#ifdef __EMSCRIPTEN__
+void StateManager::webPlayLevel(const std::string &i_levelId) {
+  for (unsigned int i = 1; i < m_statesStack.size(); i++) {
+    m_statesStack[i]->webRequestEnd();
+  }
+  flush();
+  GameApp::instance()->playLevel(i_levelId);
+}
+
+std::string StateManager::webTopStateName() const {
+  return m_statesStack.empty() ? "" : m_statesStack.back()->getName();
+}
+#endif
+
 void StateManager::replaceState(GameState *pNewState,
                                 const std::string &i_parentId) {
   for (int i = m_statesStack.size() - 1; i >= 0; i--) {

@@ -4,7 +4,8 @@
 # emsdk_env.sh first) and libxml2 from web/build-deps.sh.
 #   build-web/cmake/   CMake build tree
 #   build-web/dist/    the files to host
-# XM_WEB_DEBUG=1 keeps function names in the wasm, for readable stack traces.
+# XM_WEB_DEBUG=1 keeps function names in the wasm, for readable stack traces,
+# and adds the level sweep (web/level_sweep.js).
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -63,5 +64,10 @@ if [ -n "$(git -C "$SRC" ls-files --others --exclude-standard)" ]; then
 fi
 git -C "$SRC" archive --format=tar.gz --prefix=xmoto/ -o "$DIST/xmoto-source.tar.gz" "${TREE:-HEAD}" -- . ':(exclude)bin'
 sed "s|@COMMIT@|$COMMIT|" "$SRC/web/SOURCE.txt.in" > "$DIST/SOURCE.txt"
+
+if [ "${XM_WEB_DEBUG:-0}" = "1" ]; then
+  python3 -I "$SRC/web/gen_levels.py" "$SRC/bin" "$DIST/levels.json"
+  cp "$SRC/web/level_sweep.js" "$DIST/"
+fi
 
 echo "Serve with: python3 -m http.server --bind 127.0.0.1 -d $DIST 8000"

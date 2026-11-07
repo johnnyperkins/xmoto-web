@@ -46,6 +46,9 @@ for when a bad one is stuck. The switch then removes itself from the address.
 
 ## Other URL switches
 
+- `?test`: drive the game from a timer instead of display frames. Browsers
+  throttle background windows, which stalls automated tests. Also records
+  `window.frameCost`.
 - `?args=a,b,c`: extra command line options, such as `?args=-d`.
 - `?exts` or `?exts=novbo`: leave OpenGL extensions on, with or without vertex
   buffers. Both render a black screen under the emulation today.

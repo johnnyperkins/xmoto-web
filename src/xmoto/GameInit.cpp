@@ -1289,6 +1289,21 @@ extern "C" void xm_web_settings_changed() {
       Module.xmSyncSaves();
   });
 }
+
+/* For automated browser tests: close everything above the main menu, then
+ * play a level. */
+extern "C" EMSCRIPTEN_KEEPALIVE void xm_web_play_level(const char *i_levelId) {
+  if (s_webGameStarted) {
+    StateManager::instance()->webPlayLevel(i_levelId);
+  }
+}
+
+/* For automated browser tests: the name of the top game state. */
+extern "C" EMSCRIPTEN_KEEPALIVE const char *xm_web_top_state() {
+  static std::string s_name;
+  s_name = s_webGameStarted ? StateManager::instance()->webTopStateName() : "";
+  return s_name.c_str();
+}
 #endif
 
 void GameApp::run_unload() {
