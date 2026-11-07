@@ -45,7 +45,11 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #define DEFAULT_LANGUAGE ""
 #define DEFAULT_THEME CONFIGURE_DEFAULT_THEME
 #define DEFAULT_WEBROOM_ID "1"
+#ifdef __EMSCRIPTEN__
+#define DEFAULT_WEBCONFATINIT false // browser build is offline
+#else
 #define DEFAULT_WEBCONFATINIT true
+#endif
 #define DEFAULT_PROFILE ""
 #define DEFAULT_VERBOSE false
 #define DEFAULT_RESOLUTION_WIDTH 800
@@ -56,7 +60,11 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #define DEFAULT_GLEXTS true
 #define DEFAULT_GLVOBS true
 #define DEFAULT_DRAWLIB "OPENGL"
+#ifdef __EMSCRIPTEN__
+#define DEFAULT_WWW false // browser build is offline
+#else
 #define DEFAULT_WWW true
+#endif
 #define DEFAULT_WWW_PASSWORD ""
 #define DEFAULT_BENCHMARK false
 #define DEFAULT_DEBUG false
