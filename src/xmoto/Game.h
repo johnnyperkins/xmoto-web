@@ -69,6 +69,9 @@ public:
   void run(int nNumArgs, char **ppcArgs);
   void run_load(int nNumArgs, char **ppcArgs);
   void run_loop();
+  /* one pass of the main loop: events, update, render, frame pacing */
+  void run_iteration();
+  void saveUserConfig();
   void run_unload();
 
   /* load level */
