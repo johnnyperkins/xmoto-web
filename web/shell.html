@@ -1,0 +1,214 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>X-Moto</title>
+<style>
+  :root { --bg: #111; --fg: #ddd; --muted: #999; --link: #8cf; --btn: #2a2a2a; --btn-border: #555; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 8px; box-sizing: border-box; overflow: hidden; }
+  /* fitCanvas() sets the display size. SDL maps mouse coordinates through it. */
+  canvas { display: block; outline: none; background: #000; }
+  #wrap { display: contents; }
+  #wrap:fullscreen { display: flex; align-items: center; justify-content: center; background: #000; }
+  #bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: center; min-height: 28px; }
+  #status { color: var(--muted); }
+  #status.error { color: #f88; }
+  a { color: var(--link); }
+  button { background: var(--btn); color: var(--fg); border: 1px solid var(--btn-border); border-radius: 4px; padding: 4px 10px; font: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas></div>
+<div id="bar">
+  <span id="status">Loading...</span>
+  <button id="fs" type="button">Fullscreen</button>
+  <span><a href="https://xmoto.org/">X-Moto</a> is GPL-2.0-or-later. <a href="SOURCE.txt">Source</a>. Offline build, progress saves in this browser.</span>
+</div>
+<script>
+  var statusEl = document.getElementById('status');
+  var canvas = document.getElementById('canvas');
+  var USER_DIRS = ['/home/web_user/.local/share/xmoto', '/home/web_user/.config/xmoto', '/home/web_user/.cache/xmoto'];
+
+  function setStatus(text, isError) {
+    if (statusEl.className === 'error' && !isError) return; /* keep errors visible */
+    statusEl.textContent = text;
+    statusEl.className = isError ? 'error' : '';
+  }
+
+  /* ---- saves: the game writes to an in-memory filesystem, this copies it to IndexedDB ---- */
+  var syncing = false, syncAgain = false, fsReady = false;
+  function syncToDisk() {
+    if (!fsReady) return;
+    if (syncing) { syncAgain = true; return; }
+    syncing = true;
+    FS.syncfs(false, function (err) {
+      syncing = false;
+      if (err) console.warn('save failed', err);
+      if (syncAgain) { syncAgain = false; syncToDisk(); }
+    });
+  }
+  function saveAll() {
+    if (!fsReady) return;
+    try { Module._xm_web_save_config(); } catch (e) { console.warn('config save failed', e); }
+    syncToDisk();
+  }
+
+  canvas.addEventListener('webglcontextlost', function (e) {
+    setStatus('WebGL context lost, reload the page.', true);
+    e.preventDefault();
+  });
+  canvas.addEventListener('click', function () { canvas.focus(); });
+
+  /* ---- display size ---- */
+  var CONFIG_FILE = '/home/web_user/.config/xmoto/config.dat';
+  var bar = document.getElementById('bar');
+  var fitsWindow = false; /* rendering at the size the window had at load */
+
+  function availableSize() {
+    var fs = document.fullscreenElement;
+    if (fs) return { w: fs.clientWidth, h: fs.clientHeight };
+    /* body padding 8px each side, 10px gap above the bar */
+    return { w: window.innerWidth - 16, h: window.innerHeight - 26 - bar.offsetHeight };
+  }
+
+  /* The game's menus are laid out for at least 800x600, so small windows get
+     a bigger render that the browser scales down. */
+  function fitWindowSize() {
+    var a = availableSize();
+    var s = Math.max(1, 800 / a.w, 600 / a.h);
+    return { w: Math.round(a.w * s), h: Math.round(a.h * s) };
+  }
+
+  /* Scale the render to the largest size that fits, keeping its shape. */
+  function fitCanvas() {
+    if (!canvas.width || !canvas.height) return;
+    var a = availableSize();
+    var s = Math.min(a.w / canvas.width, a.h / canvas.height);
+    canvas.style.setProperty('width', Math.floor(canvas.width * s) + 'px', 'important');
+    canvas.style.setProperty('height', Math.floor(canvas.height * s) + 'px', 'important');
+    var want = fitWindowSize();
+    var stale = Math.abs(want.w / canvas.width - 1) > 0.02 || Math.abs(want.h / canvas.height - 1) > 0.02;
+    if (fitsWindow && !document.fullscreenElement && stale) {
+      setStatus('Window resized: reload for a sharp picture at the new size.');
+    } else if (statusEl.className !== 'error' && statusEl.textContent.indexOf('Window resized') === 0) {
+      setStatus('');
+    }
+  }
+  window.addEventListener('resize', fitCanvas);
+  document.addEventListener('fullscreenchange', fitCanvas);
+  new MutationObserver(fitCanvas).observe(canvas, { attributes: true, attributeFilter: ['width', 'height'] });
+
+  /* Settings are in config.dat. 0 x 0 means fit the window. */
+  function readConfigText() {
+    try { return FS.readFile(CONFIG_FILE, { encoding: 'utf8' }); } catch (e) { return null; }
+  }
+  function configValue(text, name) {
+    var m = text && text.match(new RegExp('name="' + name + '"\\s+value="(\\d+)"'));
+    return m ? parseInt(m[1], 10) : null;
+  }
+  function setConfigValue(text, name, value) {
+    return text.replace(new RegExp('(name="' + name + '"\\s+value=")\\d+"'), '$1' + value + '"');
+  }
+
+  /* ?res=auto or ?res=1280x720 rewrites the saved resolution, for when a bad
+     one is stuck. It runs once: the switch is removed from the address. */
+  function applyResolutionSwitch() {
+    var want = params.get('res');
+    if (!want) return;
+    var m = want.match(/^(\d{3,4})x(\d{3,4})$/);
+    var w = 0, h = 0;
+    if (m) { w = parseInt(m[1], 10); h = parseInt(m[2], 10); }
+    else if (want !== 'auto') { console.warn('ignoring ?res=' + want); return; }
+    var text = readConfigText();
+    if (text) FS.writeFile(CONFIG_FILE, setConfigValue(setConfigValue(text, 'DisplayWidth', w), 'DisplayHeight', h));
+    params.delete('res');
+    var rest = params.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+    if (!text && w) Module.arguments.push('-res', w + 'x' + h); /* no saved settings yet */
+  }
+
+  function chooseResolution() {
+    applyResolutionSwitch();
+    if (Module.arguments.indexOf('-res') >= 0) return;
+    var text = readConfigText();
+    var w = configValue(text, 'DisplayWidth'), h = configValue(text, 'DisplayHeight');
+    fitsWindow = !(w > 0 && h > 0);
+    var fit = fitWindowSize();
+    Module.arguments.push('-res', fitsWindow ? fit.w + 'x' + fit.h : w + 'x' + h);
+  }
+  document.getElementById('fs').addEventListener('click', function () {
+    var el = document.getElementById('wrap');
+    if (el.requestFullscreen) el.requestFullscreen();
+    canvas.focus();
+  });
+
+  /* ?args=--fps,-l,tut1 passes extra command line options, for debugging. */
+  var params = new URLSearchParams(location.search);
+  var extraArgs = params.get('args');
+
+  var Module = {
+    canvas: canvas,
+    /* chooseResolution() adds -res once saves are loaded. Keep this the same array:
+       the loader holds on to it. */
+    arguments: ['--nowww', '-win']
+      .concat(params.has('exts') ? (params.get('exts') === 'novbo' ? ['--novobs'] : []) : ['--noexts'])
+      .concat(extraArgs ? extraArgs.split(',') : []),
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.warn(t); },
+    setStatus: function (t) { setStatus(t); },
+    preRun: [function () {
+      USER_DIRS.forEach(function (dir) {
+        FS.mkdirTree(dir);
+        FS.mount(Module.IDBFS, {}, dir);
+      });
+      addRunDependency('xm-load-saves');
+      FS.syncfs(true, function (err) {
+        if (err) console.warn('could not load saves', err);
+        chooseResolution();
+        removeRunDependency('xm-load-saves');
+      });
+    }],
+    onRuntimeInitialized: function () {
+      fsReady = true;
+      setStatus('');
+      fitCanvas();
+      canvas.focus();
+      /* Tabs can be killed without warning, so sync often. Only changed files get written. */
+      setInterval(syncToDisk, 5000);
+    },
+    xmSyncSaves: function () { syncToDisk(); },
+    /* F12: the game saved a screenshot at path; offer it as a download */
+    xmSaveScreenshot: function (path) {
+      var data = FS.readFile(path);
+      FS.unlink(path);
+      var url = URL.createObjectURL(new Blob([data], { type: 'image/png' }));
+      var d = new Date();
+      var p = function (n) { return String(n).padStart(2, '0'); };
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'xmoto-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' +
+                   p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + '.png';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+    },
+    xmOnQuit: function () {
+      syncToDisk();
+      setStatus('Game closed. Reload the page to play again.');
+    },
+    xmOnFatal: function (message) {
+      setStatus('Error: ' + message, true);
+    }
+  };
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') saveAll();
+  });
+  window.addEventListener('pagehide', saveAll);
+  window.addEventListener('error', function (e) { setStatus('Error: ' + e.message, true); });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

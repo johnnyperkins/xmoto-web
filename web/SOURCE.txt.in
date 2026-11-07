@@ -1,0 +1,16 @@
+X-Moto browser build
+====================
+
+X-Moto is free software, licensed under the GNU GPL version 2 or later. See
+COPYING.txt.
+
+Built from commit:
+@COMMIT@
+
+xmoto-source.tar.gz in this directory holds that source, minus the game data
+(bin/), which is unchanged from the repository.
+
+Libraries compiled into the build: ODE, Chipmunk, Lua, bzip2, libccd, md5sum and
+xdgbasedir (in the source's vendor/ directory), libxml2 2.13.9 (web/build-deps.sh
+downloads it), and Emscripten's ports of SDL2, SDL2_mixer, SDL2_ttf, SDL2_net,
+libpng, libjpeg, zlib, sqlite3, ogg, vorbis, freetype and harfbuzz.

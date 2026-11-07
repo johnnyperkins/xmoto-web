@@ -25,6 +25,7 @@ See the wiki:
 - [Linux](https://github.com/xmoto/xmoto/wiki/Building-on-Linux)
 - [macOS](https://github.com/xmoto/xmoto/wiki/Building-on-macOS)
 - [FreeBSD](https://github.com/xmoto/xmoto/wiki/Building-on-FreeBSD)
+- [Web browser](web/README.md)
 
 # Basic Gameplay
 
