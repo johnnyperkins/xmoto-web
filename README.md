@@ -1,4 +1,10 @@
 # X-Moto 0.6.3 [![Build Status](https://github.com/xmoto/xmoto/actions/workflows/build.yml/badge.svg)](https://github.com/xmoto/xmoto/actions/) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=xmoto_xmoto&metric=alert_status)](https://sonarcloud.io/dashboard?id=xmoto_xmoto) [![Discord](https://img.shields.io/discord/256286284039847937?color=5865f2&label=Discord&logo=discord&logoColor=white)](https://discord.gg/W33yTUd)
+
+> **This is an unofficial browser port of X-Moto, not the official project.**
+> Play it at https://johnnyperkins.github.io/xmoto-web/. The port is on the
+> `web` branch, described in [web/README.md](web/README.md). X-Moto itself is
+> developed at [xmoto/xmoto](https://github.com/xmoto/xmoto).
+
 Copyright (C) 2005-2025
 
 # Introduction
