@@ -56,6 +56,11 @@ public:
   virtual void restartLevel(bool i_reloadLevel = false);
   virtual void nextLevel(bool i_positifOrder = true);
 
+#ifdef __EMSCRIPTEN__
+  // physics steps run so far, for the browser build's input timing
+  static unsigned int webPhysicsSteps() { return m_webPhysicsSteps; }
+#endif
+
 protected:
   virtual void executeOneCommand(std::string cmd, std::string args);
   void makeStatsStr();
@@ -103,6 +108,9 @@ protected:
   void playToCheckpoint();
 
 private:
+#ifdef __EMSCRIPTEN__
+  static unsigned int m_webPhysicsSteps;
+#endif
   void init(bool i_doShade, bool i_doShadeAnim);
   void initMessageRegistering();
   bool m_trackingShotMode;

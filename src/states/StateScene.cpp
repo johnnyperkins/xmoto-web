@@ -53,6 +53,10 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 #define STATS_LEVELS_NOTES_SIZE 15
 
+#ifdef __EMSCRIPTEN__
+unsigned int StateScene::m_webPhysicsSteps = 0;
+#endif
+
 void StateScene::init(bool i_doShade, bool i_doShadeAnim) {
   Sprite *v_sprite;
 
@@ -223,6 +227,9 @@ bool StateScene::update() {
         }
         m_fLastPhysTime += PHYS_STEP_SIZE / 100.0;
         nPhysSteps++;
+#ifdef __EMSCRIPTEN__
+        m_webPhysicsSteps++;
+#endif
       }
 
       // if the delay is too long, reinitialize

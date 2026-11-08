@@ -98,11 +98,29 @@ int GameApp::floatToTime(float ftime) {
   return (int)(ftime * 100.0);
 }
 
+#ifdef __EMSCRIPTEN__
+static int s_webClock = -1;
+
+void GameApp::webSetClock(int i_ms) {
+  s_webClock = i_ms;
+}
+#endif
+
 double GameApp::getXMTime(void) {
+#ifdef __EMSCRIPTEN__
+  if (s_webClock >= 0) {
+    return s_webClock / 1000.0f;
+  }
+#endif
   return SDL_GetTicks() / 1000.0f;
 }
 
 int GameApp::getXMTimeInt(void) {
+#ifdef __EMSCRIPTEN__
+  if (s_webClock >= 0) {
+    return s_webClock;
+  }
+#endif
   return SDL_GetTicks();
 }
 

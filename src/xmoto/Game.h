@@ -73,6 +73,9 @@ public:
   void run_iteration();
 #ifdef __EMSCRIPTEN__
   static void run_browser_frame(void *i_app);
+  /* hold the game clock at i_ms, or follow real time again with -1 */
+  static void webSetClock(int i_ms);
+  void webHandleEvents();
 #endif
   void saveUserConfig();
   void run_unload();

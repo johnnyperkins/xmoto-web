@@ -52,7 +52,10 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include <curl/curl.h>
 
 #ifdef __EMSCRIPTEN__
+#include <algorithm>
+#include <deque>
 #include <emscripten.h>
+#include <map>
 #endif
 
 #include "states/StateEditProfile.h"
@@ -63,6 +66,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include "states/StatePreplayingGame.h"
 #include "states/StatePreplayingReplay.h"
 #include "states/StateReplaying.h"
+#include "states/StateScene.h"
 #include "states/StateWaitServerInstructions.h"
 
 #include "thread/UpgradeLevelsThread.h"
@@ -905,18 +909,131 @@ void GameApp::manageEvent(SDL_Event *Event) {
  * them: creating StateManager early breaks the first menu. */
 static bool s_webGameStarted = false;
 
+/* Input timing. The browser hands over a display frame's input at once, and
+ * the frame then runs several loop iterations, each ending at a later time on
+ * the game clock. An iteration handles only the input that came before its
+ * time, and run_browser_frame ends an iteration at each button event, so
+ * physics has reached the event's time when the next iteration applies it:
+ * input lands on the 10 ms physics step during which it happened.
+ *
+ * A press and its release in the same slice would cancel out before physics
+ * ran, losing the tap. So a release waits until physics has stepped since its
+ * press, or 10 ms of game clock have passed where nothing steps physics (menus,
+ * pause). The events after it wait too, to keep their order. */
+struct WebPress {
+  int clock; // game clock
+  unsigned int physicsSteps;
+};
+static std::deque<SDL_Event> s_webEvents; // polled, not handled yet
+static std::map<int, WebPress> s_webPresses; // by webButtonId
+static int s_webLastUpdateClock = 0;
+static bool s_webLastIteration = false; // of this browser frame
+
+/* An id for a button-like event, or -1. o_pressed: a new press, not a key
+ * repeat or a release. */
+static int webButtonId(const SDL_Event &i_event, bool &o_pressed) {
+  o_pressed = i_event.type == SDL_KEYDOWN ||
+              i_event.type == SDL_MOUSEBUTTONDOWN ||
+              i_event.type == SDL_JOYBUTTONDOWN ||
+              i_event.type == SDL_CONTROLLERBUTTONDOWN;
+  switch (i_event.type) {
+    case SDL_KEYDOWN:
+    case SDL_KEYUP:
+      o_pressed = o_pressed && i_event.key.repeat == 0;
+      return i_event.key.keysym.scancode;
+    case SDL_MOUSEBUTTONDOWN:
+    case SDL_MOUSEBUTTONUP:
+      return 0x10000 + i_event.button.button;
+    case SDL_JOYBUTTONDOWN:
+    case SDL_JOYBUTTONUP:
+      return 0x20000 + (i_event.jbutton.which << 8) + i_event.jbutton.button;
+    case SDL_CONTROLLERBUTTONDOWN:
+    case SDL_CONTROLLERBUTTONUP:
+      return 0x30000 + (i_event.cbutton.which << 8) + i_event.cbutton.button;
+  }
+  return -1;
+}
+
+static bool webIsPressOrRelease(const SDL_Event &i_event) {
+  bool v_pressed;
+  return webButtonId(i_event, v_pressed) >= 0 &&
+         (v_pressed || i_event.type != SDL_KEYDOWN);
+}
+
+static bool webIsGamepad(const SDL_Event &i_event) {
+  switch (i_event.type) {
+    case SDL_JOYAXISMOTION:
+    case SDL_JOYBALLMOTION:
+    case SDL_JOYHATMOTION:
+    case SDL_JOYBUTTONDOWN:
+    case SDL_JOYBUTTONUP:
+    case SDL_CONTROLLERAXISMOTION:
+    case SDL_CONTROLLERBUTTONDOWN:
+    case SDL_CONTROLLERBUTTONUP:
+      return true;
+  }
+  return false;
+}
+
+static int s_webLastPoll = 0; // SDL_GetTicks() when events were last polled
+
+static void webPollEvents() {
+  SDL_Event v_event;
+  while (SDL_PollEvent(&v_event)) {
+    s_webEvents.push_back(v_event);
+  }
+  s_webLastPoll = SDL_GetTicks();
+}
+
+void GameApp::webHandleEvents() {
+  const int v_clock = getXMTimeInt();
+  SDL_Event v_event;
+
+  webPollEvents();
+  while (s_webEvents.empty() == false) {
+    v_event = s_webEvents.front();
+    int v_time = (int)v_event.common.timestamp;
+    if (v_time > v_clock || (v_time == v_clock && !s_webLastIteration)) {
+      break; // for a later iteration
+    }
+
+    bool v_pressed;
+    int v_id = webButtonId(v_event, v_pressed);
+    if (v_id >= 0 && v_pressed) {
+      WebPress v_press = { v_clock, StateScene::webPhysicsSteps() };
+      s_webPresses[v_id] = v_press;
+    } else if (v_id >= 0 && v_event.type != SDL_KEYDOWN) { // a release
+      std::map<int, WebPress>::iterator v_press = s_webPresses.find(v_id);
+      if (v_press != s_webPresses.end()) {
+        if (StateScene::webPhysicsSteps() == v_press->second.physicsSteps &&
+            s_webLastUpdateClock < v_press->second.clock + 11) {
+          break;
+        }
+        s_webPresses.erase(v_press);
+      }
+    }
+
+    s_webEvents.pop_front();
+    manageEvent(&v_event);
+  }
+}
+
 /* The browser calls this once per display frame and the game must return to
  * it. Update and render counters count loop iterations and expect getMaxFps()
- * of them a second, so run however many this frame owes. Physics is
- * unaffected: StateScene::update steps it in fixed 0.01s increments against
- * wall-clock time, as it does natively. */
+ * of them a second, so run however many this frame owes, spread evenly over
+ * the time since the last frame on the game clock. StateScene steps physics
+ * against that clock in fixed 0.01s increments, as natively. Each button event
+ * gets an extra iteration ending at its time (see webHandleEvents), borrowed
+ * from later frames. */
 void GameApp::run_browser_frame(void *i_app) {
   static double s_lastTime = emscripten_get_now();
+  static int s_lastClock = SDL_GetTicks();
   static double s_owed = 1.0;
   const double v_maxOwed = 8.0; // don't spiral after a stall or a hidden tab
 
   GameApp *v_app = static_cast<GameApp *>(i_app);
   double v_now = emscripten_get_now();
+  int v_clock = SDL_GetTicks();
 
   s_owed +=
     (v_now - s_lastTime) / 1000.0 * StateManager::instance()->getMaxFps();
@@ -924,12 +1041,61 @@ void GameApp::run_browser_frame(void *i_app) {
   if (s_owed > v_maxOwed) {
     s_owed = v_maxOwed;
   }
+  std::vector<int> v_clocks;
+  int v_owed = (int)s_owed;
+  for (int i = 1; i <= v_owed; i++) {
+    v_clocks.push_back(s_lastClock +
+                       (int)((long long)(v_clock - s_lastClock) * i / v_owed));
+  }
+  /* SDL reads gamepads when it polls, so all that is known of a gamepad
+   * input's time is that it came since the last poll: place it halfway. */
+  const int v_lastPoll = s_webLastPoll;
+  const unsigned int v_polled = s_webEvents.size();
+  webPollEvents();
+  for (unsigned int i = v_polled; i < s_webEvents.size(); i++) {
+    if (webIsGamepad(s_webEvents[i]) && v_lastPoll < v_clock) {
+      s_webEvents[i].common.timestamp =
+        v_lastPoll + (v_clock - v_lastPoll + 1) / 2;
+    }
+  }
+  bool v_eventNow = false; // in the millisecond this frame started
+  for (unsigned int i = 0; i < s_webEvents.size(); i++) {
+    int v_time = (int)s_webEvents[i].common.timestamp;
+    if (webIsPressOrRelease(s_webEvents[i]) && v_time > s_lastClock &&
+        v_time <= v_clock && s_owed - v_clocks.size() > -2.0) {
+      v_clocks.push_back(v_time);
+      v_eventNow = v_eventNow || v_time == v_clock;
+    }
+  }
+  /* End on the frame's own time, to draw it: when input added iterations to a
+   * frame that owed none, or when an iteration's worth of time has passed but
+   * input borrowed this frame's iterations. Skipping a picture after each
+   * input would stutter; later frames with two iterations repay instead. */
+  const bool v_iterationDue = (long long)(v_clock - s_lastClock) *
+                                StateManager::instance()->getMaxFps() >=
+                              1000;
+  if (v_owed <= 0 && (v_clocks.empty() == false || v_iterationDue)) {
+    v_clocks.push_back(v_clock);
+  }
+  std::sort(v_clocks.begin(), v_clocks.end());
+  v_clocks.erase(std::unique(v_clocks.begin(), v_clocks.end()), v_clocks.end());
+  if (v_eventNow) {
+    v_clocks.push_back(v_clock); // the last iteration applies it
+  }
 
   try {
-    while (s_owed >= 1.0 && v_app->m_bQuit == false) {
-      StateManager::instance()->setWebDeferRender(s_owed >= 2.0);
+    for (unsigned int i = 0; i < v_clocks.size() && v_app->m_bQuit == false;
+         i++) {
+      s_webLastIteration = i + 1 == v_clocks.size();
+      webSetClock(v_clocks[i]);
+      StateManager::instance()->setWebDeferRender(!s_webLastIteration);
       v_app->run_iteration();
+      s_webLastUpdateClock = v_clocks[i];
       s_owed -= 1.0;
+    }
+    webSetClock(-1);
+    if (v_clocks.empty() == false) {
+      s_lastClock = v_clock;
     }
     if (v_app->m_bQuit) {
       /* No run_unload: the tab reclaims everything, and its teardown order
@@ -942,6 +1108,7 @@ void GameApp::run_browser_frame(void *i_app) {
       });
     }
   } catch (Exception &e) {
+    webSetClock(-1);
     emscripten_cancel_main_loop();
     printf("fatal exception : %s\n", e.getMsg().c_str());
     EM_ASM(
@@ -1006,10 +1173,7 @@ void GameApp::run_iteration() {
   SDL_PumpEvents();
 
 #ifdef __EMSCRIPTEN__
-  // never block the browser's thread
-  while (SDL_PollEvent(&Event)) {
-    manageEvent(&Event);
-  }
+  webHandleEvents(); // never blocks the browser's thread
 #else
   // wait on event if xmoto won't be update/rendered
   if (StateManager::instance()->needUpdateOrRender()) {
